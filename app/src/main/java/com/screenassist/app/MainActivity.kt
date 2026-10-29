@@ -10,6 +10,8 @@ import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.navigation.NavigationView
 import androidx.appcompat.widget.Toolbar
 import androidx.appcompat.app.ActionBarDrawerToggle
+import android.content.Intent
+import android.provider.Settings
 
 class MainActivity : AppCompatActivity() {
     private lateinit var drawerLayout: DrawerLayout
@@ -33,7 +35,10 @@ class MainActivity : AppCompatActivity() {
             when (menuItem.itemId) {
                 R.id.nav_api_config -> showApiConfigDialog()
                 R.id.nav_prompt_manager -> showPromptManagerDialog()
-                R.id.nav_start_bubble -> Toast.makeText(this, "Bubble Service will run in next step!", Toast.LENGTH_SHORT).show()
+                R.id.nav_start_bubble -> {
+                    Toast.makeText(this, "Please TURN ON ScreenAssist from Accessibility Settings", Toast.LENGTH_LONG).show()
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
             }
             drawerLayout.closeDrawer(GravityCompat.START)
             true
