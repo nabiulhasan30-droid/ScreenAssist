@@ -32,13 +32,12 @@ class ScreenAssistService : AccessibilityService() {
     private var resultView: View? = null
     private var hideJob: Job? = null
 
-    // Lock screen hide logic
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (::bubbleView.isInitialized) {
                 when (intent?.action) {
                     Intent.ACTION_SCREEN_OFF -> bubbleView.visibility = View.GONE
-                    Intent.ACTION_USER_PRESENT -> bubbleView.visibility = View.VISIBLE // Unlocked
+                    Intent.ACTION_USER_PRESENT -> bubbleView.visibility = View.VISIBLE
                 }
             }
         }
@@ -48,10 +47,7 @@ class ScreenAssistService : AccessibilityService() {
         settingsManager = SettingsManager(this)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_USER_PRESENT)
-        }
+        val filter = IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_USER_PRESENT) }
         registerReceiver(screenReceiver, filter)
         
         createFloatingBubble()
@@ -62,37 +58,23 @@ class ScreenAssistService : AccessibilityService() {
         bubbleView = TextView(this).apply {
             textSize = settingsManager.getBubbleSize()
             setPadding(15, 15, 15, 15)
-            setBackgroundColor(Color.parseColor("#44000000")) // হাল্কা শ্যাডো
+            setBackgroundColor(Color.parseColor("#44000000"))
             setTextColor(Color.WHITE)
         }
-
         params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 400
-        }
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = 0; y = 400 }
 
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
+        var initialX = 0; var initialY = 0; var initialTouchX = 0f; var initialTouchY = 0f
 
         bubbleView.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    hideJob?.cancel() // টাইমার বাতিল
-                    bubbleView.text = "🤖" // পুরো বাবল দেখাবে
-                    bubbleView.alpha = 1.0f
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
+                    hideJob?.cancel()
+                    bubbleView.text = "🤖"; bubbleView.alpha = 1.0f
+                    initialX = params.x; initialY = params.y; initialTouchX = event.rawX; initialTouchY = event.rawY
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -102,13 +84,8 @@ class ScreenAssistService : AccessibilityService() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    val xDiff = (event.rawX - initialTouchX).toInt()
-                    val yDiff = (event.rawY - initialTouchY).toInt()
-                    
-                    if (abs(xDiff) < 15 && abs(yDiff) < 15) {
-                        processScreenText() // অল্প একটু নড়লে ক্লিক হিসেবে ধরে কাজ করবে
-                    }
-                    startAutoHideTimer() // আবার ২ সেকেন্ডের টাইমার শুরু
+                    if (abs(event.rawX - initialTouchX) < 15 && abs(event.rawY - initialTouchY) < 15) processScreenText()
+                    startAutoHideTimer()
                     true
                 }
                 else -> false
@@ -120,18 +97,12 @@ class ScreenAssistService : AccessibilityService() {
     private fun startAutoHideTimer() {
         hideJob?.cancel()
         hideJob = serviceScope.launch {
-            delay(2000) // ২ সেকেন্ড অপেক্ষা করবে
-            
+            delay(2000)
             val edge = settingsManager.getBubbleEdge()
-            val screenWidth = resources.displayMetrics.widthPixels
-            
-            params.x = if (edge == "Right") screenWidth else 0
-            bubbleView.text = if (edge == "Right") "◀" else "▶" // লুকিয়ে যাওয়ার আইকন
+            params.x = if (edge == "Right") resources.displayMetrics.widthPixels else 0
+            bubbleView.text = if (edge == "Right") "◀" else "▶"
             bubbleView.alpha = 0.6f
-            
-            if (::bubbleView.isInitialized) {
-                windowManager.updateViewLayout(bubbleView, params)
-            }
+            if (::bubbleView.isInitialized) windowManager.updateViewLayout(bubbleView, params)
         }
     }
 
@@ -143,20 +114,43 @@ class ScreenAssistService : AccessibilityService() {
         val apiKey = settingsManager.getApiKey()
         val prompt = settingsManager.getPrompt()
         
-        if (apiKey.isBlank()) {
-            Toast.makeText(this, "Add API Key first!", Toast.LENGTH_SHORT).show()
-            return
-        }
+        if (apiKey.isBlank()) { Toast.makeText(this, "Add API Key first!", Toast.LENGTH_SHORT).show(); return }
 
         Toast.makeText(this, "Reading screen...", Toast.LENGTH_SHORT).show()
+        
         serviceScope.launch {
-            try {
-                val generativeModel = GenerativeModel(modelName = "gemini-1.5-flash", apiKey = apiKey)
-                val response = generativeModel.generateContent("$prompt\n\nScreen Text: $screenText")
-                showResultOverlay(response.text ?: "No response")
-            } catch (e: Exception) {
-                showResultOverlay("Error: ${e.message}")
+            val allModels = settingsManager.getModelsList().toList()
+            var currentModel = settingsManager.getSelectedModel()
+            var success = false
+            var errorMessage = ""
+            
+            if (!allModels.contains(currentModel) && allModels.isNotEmpty()) currentModel = allModels[0]
+            
+            var startIndex = allModels.indexOf(currentModel)
+            if (startIndex == -1) startIndex = 0
+            
+            for (i in startIndex until allModels.size) {
+                val modelToTry = allModels[i]
+                try {
+                    if (i > startIndex) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@ScreenAssistService, "Limit reached! Switching to: $modelToTry", Toast.LENGTH_LONG).show()
+                        }
+                        settingsManager.saveSelectedModel(modelToTry)
+                    }
+                    
+                    val generativeModel = GenerativeModel(modelName = modelToTry, apiKey = apiKey)
+                    val response = generativeModel.generateContent("$prompt\n\nScreen Text: $screenText")
+                    
+                    showResultOverlay(response.text ?: "No response")
+                    success = true
+                    break 
+                } catch (e: Exception) {
+                    errorMessage = e.message ?: "Unknown error"
+                }
             }
+            
+            if (!success) showResultOverlay("Error after trying all models: $errorMessage")
         }
     }
 
@@ -165,47 +159,28 @@ class ScreenAssistService : AccessibilityService() {
         if (node.text != null) sb.append(node.text).append("\n")
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
-            if (child != null) {
-                sb.append(extractText(child))
-                child.recycle()
-            }
+            if (child != null) { sb.append(extractText(child)); child.recycle() }
         }
         return sb.toString()
     }
 
     private fun showResultOverlay(result: String) {
-        if (resultView != null) {
-            windowManager.removeView(resultView)
-            resultView = null
-        }
+        if (resultView != null) { windowManager.removeView(resultView); resultView = null }
         
         val context = this
         resultView = ScrollView(context).apply {
-            setBackgroundColor(Color.parseColor("#F5FFFFFF"))
-            setPadding(40, 40, 40, 40)
-            
+            setBackgroundColor(Color.parseColor("#F5FFFFFF")); setPadding(40, 40, 40, 40)
             val layout = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
             val closeBtn = Button(context).apply {
-                text = "Close"
-                setBackgroundColor(Color.parseColor("#6200EE"))
-                setTextColor(Color.WHITE)
-                setOnClickListener {
-                    windowManager.removeView(this@apply.parent.parent as View)
-                    resultView = null
-                }
+                text = "Close"; setBackgroundColor(Color.parseColor("#6200EE")); setTextColor(Color.WHITE)
+                setOnClickListener { windowManager.removeView(this@apply.parent.parent as View); resultView = null }
             }
             val textView = TextView(context).apply { text = result; textSize = 16f; setTextColor(Color.BLACK); setPadding(0, 20, 0, 0) }
-            
-            layout.addView(closeBtn)
-            layout.addView(textView)
-            addView(layout)
+            layout.addView(closeBtn); layout.addView(textView); addView(layout)
         }
-        
         val rp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.CENTER }
         windowManager.addView(resultView, rp)
@@ -213,7 +188,6 @@ class ScreenAssistService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
-    
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(screenReceiver)

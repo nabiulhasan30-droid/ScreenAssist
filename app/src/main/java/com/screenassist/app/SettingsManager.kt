@@ -17,4 +17,10 @@ class SettingsManager(context: Context) {
 
     fun saveBubbleEdge(edge: String) { prefs.edit().putString("BUBBLE_EDGE", edge).apply() }
     fun getBubbleEdge(): String = prefs.getString("BUBBLE_EDGE", "Right") ?: "Right"
+
+    fun saveModelsList(models: Set<String>) { prefs.edit().putStringSet("MODELS_LIST", models).apply() }
+    fun getModelsList(): Set<String> = prefs.getStringSet("MODELS_LIST", setOf("gemini-1.5-flash", "gemini-pro")) ?: setOf("gemini-1.5-flash", "gemini-pro")
+
+    fun saveSelectedModel(model: String) { prefs.edit().putString("SELECTED_MODEL", model).apply() }
+    fun getSelectedModel(): String = prefs.getString("SELECTED_MODEL", "gemini-pro") ?: "gemini-pro"
 }
