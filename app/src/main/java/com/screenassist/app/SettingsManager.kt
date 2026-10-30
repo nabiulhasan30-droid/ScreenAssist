@@ -6,21 +6,12 @@ import android.content.SharedPreferences
 class SettingsManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("ScreenAssistPrefs", Context.MODE_PRIVATE)
 
-    fun saveApiKey(apiKey: String) { prefs.edit().putString("API_KEY", apiKey).apply() }
-    fun getApiKey(): String = prefs.getString("API_KEY", "") ?: ""
-
-    fun savePrompt(prompt: String) { prefs.edit().putString("PROMPT", prompt).apply() }
-    fun getPrompt(): String = prefs.getString("PROMPT", "Translate this to Bengali:") ?: "Translate this to Bengali:"
+    fun savePrompts(prompts: String) { prefs.edit().putString("PROMPTS", prompts).apply() }
+    fun getPrompts(): String = prefs.getString("PROMPTS", "হ্যালো!\nকেমন আছেন?\nধন্যবাদ।") ?: "হ্যালো!\nকেমন আছেন?\nধন্যবাদ।"
 
     fun saveBubbleSize(size: Float) { prefs.edit().putFloat("BUBBLE_SIZE", size).apply() }
     fun getBubbleSize(): Float = prefs.getFloat("BUBBLE_SIZE", 35f)
 
     fun saveBubbleEdge(edge: String) { prefs.edit().putString("BUBBLE_EDGE", edge).apply() }
     fun getBubbleEdge(): String = prefs.getString("BUBBLE_EDGE", "Right") ?: "Right"
-
-    fun saveModelsList(models: Set<String>) { prefs.edit().putStringSet("MODELS_LIST", models).apply() }
-    fun getModelsList(): Set<String> = prefs.getStringSet("MODELS_LIST", setOf("gemini-1.5-flash", "gemini-pro")) ?: setOf("gemini-1.5-flash", "gemini-pro")
-
-    fun saveSelectedModel(model: String) { prefs.edit().putString("SELECTED_MODEL", model).apply() }
-    fun getSelectedModel(): String = prefs.getString("SELECTED_MODEL", "gemini-pro") ?: "gemini-pro"
 }

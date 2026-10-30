@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:id="@+id/nav_api_config" android:title="API Configuration" />
     <item android:id="@+id/nav_prompt_manager" android:title="Prompt Manager" />
     <item android:id="@+id/nav_bubble_manager" android:title="Bubble Management" />
     <item android:id="@+id/nav_start_bubble" android:title="Start Floating Bubble" />

@@ -2,9 +2,12 @@ package com.screenassist.app
 
 import android.accessibilityservice.AccessibilityService
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.graphics.PixelFormat
@@ -19,7 +22,6 @@ import android.widget.ScrollView
 import android.widget.Toast
 import android.graphics.Color
 import kotlinx.coroutines.*
-import com.google.ai.client.generativeai.GenerativeModel
 import kotlin.math.abs
 
 class ScreenAssistService : AccessibilityService() {
@@ -73,7 +75,7 @@ class ScreenAssistService : AccessibilityService() {
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     hideJob?.cancel()
-                    bubbleView.text = "🤖"; bubbleView.alpha = 1.0f
+                    bubbleView.text = "📋"; bubbleView.alpha = 1.0f
                     initialX = params.x; initialY = params.y; initialTouchX = event.rawX; initialTouchY = event.rawY
                     true
                 }
@@ -84,7 +86,7 @@ class ScreenAssistService : AccessibilityService() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (abs(event.rawX - initialTouchX) < 15 && abs(event.rawY - initialTouchY) < 15) processScreenText()
+                    if (abs(event.rawX - initialTouchX) < 15 && abs(event.rawY - initialTouchY) < 15) showPromptsMenu()
                     startAutoHideTimer()
                     true
                 }
@@ -106,84 +108,68 @@ class ScreenAssistService : AccessibilityService() {
         }
     }
 
-    private fun processScreenText() {
-        val rootNode = rootInActiveWindow
-        if (rootNode == null) return
-        
-        val screenText = extractText(rootNode)
-        val apiKey = settingsManager.getApiKey()
-        val prompt = settingsManager.getPrompt()
-        
-        if (apiKey.isBlank()) { Toast.makeText(this, "Add API Key first!", Toast.LENGTH_SHORT).show(); return }
-
-        Toast.makeText(this, "Reading screen...", Toast.LENGTH_SHORT).show()
-        
-        serviceScope.launch {
-            val allModels = settingsManager.getModelsList().toList()
-            var currentModel = settingsManager.getSelectedModel()
-            var success = false
-            var errorMessage = ""
-            
-            if (!allModels.contains(currentModel) && allModels.isNotEmpty()) currentModel = allModels[0]
-            
-            var startIndex = allModels.indexOf(currentModel)
-            if (startIndex == -1) startIndex = 0
-            
-            for (i in startIndex until allModels.size) {
-                val modelToTry = allModels[i]
-                try {
-                    if (i > startIndex) {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@ScreenAssistService, "Limit reached! Switching to: $modelToTry", Toast.LENGTH_LONG).show()
-                        }
-                        settingsManager.saveSelectedModel(modelToTry)
-                    }
-                    
-                    val generativeModel = GenerativeModel(modelName = modelToTry, apiKey = apiKey)
-                    val response = generativeModel.generateContent("$prompt\n\nScreen Text: $screenText")
-                    
-                    showResultOverlay(response.text ?: "No response")
-                    success = true
-                    break 
-                } catch (e: Exception) {
-                    errorMessage = e.message ?: "Unknown error"
-                }
-            }
-            
-            if (!success) showResultOverlay("Error after trying all models: $errorMessage")
-        }
-    }
-
-    private fun extractText(node: AccessibilityNodeInfo): String {
-        val sb = java.lang.StringBuilder()
-        if (node.text != null) sb.append(node.text).append("\n")
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) { sb.append(extractText(child)); child.recycle() }
-        }
-        return sb.toString()
-    }
-
-    private fun showResultOverlay(result: String) {
+    private fun showPromptsMenu() {
         if (resultView != null) { windowManager.removeView(resultView); resultView = null }
         
+        val promptsList = settingsManager.getPrompts().split("\n").filter { it.isNotBlank() }
+        if (promptsList.isEmpty()) { Toast.makeText(this, "No prompts saved!", Toast.LENGTH_SHORT).show(); return }
+
         val context = this
         resultView = ScrollView(context).apply {
             setBackgroundColor(Color.parseColor("#F5FFFFFF")); setPadding(40, 40, 40, 40)
             val layout = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            
             val closeBtn = Button(context).apply {
-                text = "Close"; setBackgroundColor(Color.parseColor("#6200EE")); setTextColor(Color.WHITE)
+                text = "Close Menu"; setBackgroundColor(Color.parseColor("#D32F2F")); setTextColor(Color.WHITE)
                 setOnClickListener { windowManager.removeView(this@apply.parent.parent as View); resultView = null }
             }
-            val textView = TextView(context).apply { text = result; textSize = 16f; setTextColor(Color.BLACK); setPadding(0, 20, 0, 0) }
-            layout.addView(closeBtn); layout.addView(textView); addView(layout)
+            layout.addView(closeBtn)
+
+            for (promptText in promptsList) {
+                val btn = Button(context).apply {
+                    text = promptText; isAllCaps = false
+                    setBackgroundColor(Color.parseColor("#6200EE")); setTextColor(Color.WHITE)
+                    val marginParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    marginParams.setMargins(0, 15, 0, 0)
+                    layoutParams = marginParams
+
+                    setOnClickListener {
+                        pasteTextToFocusedField(promptText)
+                        windowManager.removeView(this@apply.parent.parent.parent as View)
+                        resultView = null
+                    }
+                }
+                layout.addView(btn)
+            }
+            addView(layout)
         }
+        
         val rp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.CENTER }
         windowManager.addView(resultView, rp)
+    }
+
+    private fun pasteTextToFocusedField(textToPaste: String) {
+        val rootNode = rootInActiveWindow
+        val focusedNode = rootNode?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
+        if (focusedNode != null && focusedNode.isEditable) {
+            val arguments = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToPaste) }
+            val success = focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+            
+            if (!success) {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("ScreenAssist", textToPaste)
+                clipboard.setPrimaryClip(clip)
+                focusedNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            }
+            Toast.makeText(this, "Pasted!", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Tap on a text field first!", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
